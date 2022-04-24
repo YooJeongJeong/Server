@@ -8,9 +8,9 @@ public class AppMain extends Application {
     @Override
     public void start(Stage primaryStage) throws Exception {
         FXMLLoader loader = new FXMLLoader(getClass().getResource("server.fxml"));
+        Parent server = loader.load();
         ServerController serverController = loader.getController();
         serverController.setPrimaryStage(primaryStage);
-        Parent server = loader.load();
         Scene scene = new Scene(server);
 
         primaryStage.setTitle("Server");
