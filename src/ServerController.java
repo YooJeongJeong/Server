@@ -125,11 +125,13 @@ public class ServerController implements Initializable {
 
     class Client {
         SocketChannel socketChannel;
-        FileChannel fileChannel;
-        int fileByteSize;
         Message message;
         User user;
         Room room;
+
+        FileChannel fileChannel;
+        String fileName;
+        int fileByteSize;
 
         Client(SocketChannel socketChannel) throws IOException {
             this.socketChannel = socketChannel;
@@ -143,37 +145,24 @@ public class ServerController implements Initializable {
                 message = Message.readMsg(socketChannel);
                 switch (message.getMsgType()) {
                     case LOGIN:
-                        doLogin();      break;
+                        doLogin(selectionKey);      break;
                     case SIGNUP:
-                        doSignup();     break;
+                        doSignup(selectionKey);     break;
                     case SEND:
-                        doSend();       break;
+                        doSend(selectionKey);       break;
                     case JOIN:
-                        doJoin();       break;
+                        doJoin(selectionKey);       break;
                     case EXIT:
-                        doExit();       break;
+                        doExit(selectionKey);       break;
                     case INFO:
-                        doInfo();       break;
+                        doInfo(selectionKey);       break;
                     case MAKE:
-                        doMakeRoom();   break;
-                    /* 클라이언트가 업로드 요청을 할 때 실행 */
-                    case UPLOAD_START:
-                        openFileChannel();          break;
-                    case UPLOAD_DOING:
-                        receiveFile();              break;
-                    case UPLOAD_END:
-                        closeFileChannel();         break;
-                    /* 클라이언트의 다운로드 요청에 따라 실행 */
-                    case FILE_LIST:
-                    case DOWNLOAD:
-                    case DOWNLOAD_READY:
-                    case DOWNLOAD_DOING:
-                    case DOWNLOAD_END:
+                        doMakeRoom(selectionKey);   break;
+                    case UPLOAD:
+                        receiveFile();  break;
                     default:
                         Platform.runLater(()->displayText("[Error: unexpected message type]"));
                 }
-                selectionKey.interestOps(SelectionKey.OP_WRITE);
-                selector.wakeup();
 
                 String msg = "[" + message.getMsgType() + " 요청 처리: " + socketChannel.getRemoteAddress() + ": " +
                         Thread.currentThread().getName() + "]";
@@ -218,7 +207,7 @@ public class ServerController implements Initializable {
             }
         }
 
-        public void doLogin() {
+        public void doLogin(SelectionKey selectionKey) {
             user = findUser(message.getId());
             if(user != null) {
                 if(user.getPw().equals(message.getPw())) {
@@ -234,9 +223,11 @@ public class ServerController implements Initializable {
                 message.setData("[존재하지 않는 아이디입니다]");
                 message.setMsgType(MsgType.LOGIN_FAILED);
             }
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
         }
 
-        public void doSignup() {
+        public void doSignup(SelectionKey selectionKey) {
             user = findUser(message.getId());
             if(user == null) {
                 message.setData("[" + message.getId() + " 회원가입 성공]");
@@ -246,9 +237,11 @@ public class ServerController implements Initializable {
                 message.setData("[이미 존재하는 아이디입니다]");
                 message.setMsgType(MsgType.SIGNUP_FAILED);
             }
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
         }
 
-        public void doSend() {
+        public void doSend(SelectionKey selectionKey) {
             String data = "[" + message.getId() + "] " + message.getData();
             List<Client> clientList = findClient(room.getName());
             for(Client client : clientList) {
@@ -256,9 +249,11 @@ public class ServerController implements Initializable {
                 SelectionKey key = client.socketChannel.keyFor(selector);
                 key.interestOps(SelectionKey.OP_WRITE);
             }
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
         }
 
-        public void doJoin() {
+        public void doJoin(SelectionKey selectionKey) {
             try {
                 String roomName = message.getData();
                 List<Client> clientList = findClient(roomName);
@@ -274,9 +269,11 @@ public class ServerController implements Initializable {
             } catch (Exception e) {
                 message.setMsgType(MsgType.JOIN_FAILED);
             }
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
         }
 
-        public void doExit() {
+        public void doExit(SelectionKey selectionKey) {
             try {
                 String roomName = room.getName();
                 List<Client> clientList = findClient(roomName);
@@ -291,9 +288,11 @@ public class ServerController implements Initializable {
             } catch (Exception e) {
                 message.setMsgType(MsgType.EXIT_FAILED);
             }
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
         }
 
-        public void doInfo() {
+        public void doInfo(SelectionKey selectionKey) {
             List<User> users = new Vector<User>();
             String roomName = message.getData();
             List<Client> clientList = findClient(roomName);
@@ -302,9 +301,12 @@ public class ServerController implements Initializable {
             }
             message.setUsers(users);
             message.setRooms(rooms);
+
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
         }
 
-        public void doMakeRoom() {
+        public void doMakeRoom(SelectionKey selectionKey) {
             String roomName = message.getData();
             if(findRoom(roomName) == null) {
                 Room newRoom = new Room(roomName, message.getId());
@@ -315,54 +317,40 @@ public class ServerController implements Initializable {
                 message.setData("[같은 이름의 방이 존재합니다]");
                 message.setMsgType(MsgType.MAKE_FAILED);
             }
-        }
-
-        public void openFileChannel() {
-            try {
-                String fileName = message.getData();
-                String filePath = "file" + File.separator + fileName;
-
-                Path path = Paths.get(filePath);
-                Files.createDirectories(path.getParent());
-
-                fileChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                fileByteSize = 0;
-
-                message.setData("[서버: 다운로드 준비 완료]");
-                message.setMsgType(MsgType.DOWNLOAD_READY);
-            } catch (Exception e) {
-                Platform.runLater(() -> {displayText("[파일 채널 여는 중 오류 발생]");});
-            }
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
         }
 
         public void receiveFile() {
             try {
+                /* 파일 채널이 닫혀 있다면, 채널을 열고 파일을 쓸 준비를 한다 */
+                if(fileChannel == null || !fileChannel.isOpen()) {
+                    fileName = message.getData();
+                    String filePath = "file" + File.separator + fileName;
+
+                    Path path = Paths.get(filePath);
+                    Files.createDirectories(path.getParent());
+
+                    fileChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+
+                    String data = "[파일 업로드 시작 : " + fileName + "]";
+                    Platform.runLater(() -> {displayText(data);});
+                    return;
+                }
+                /* messgae의 data 값이 null이면 클라이언트가 파일 업로드를 끝냈다는 뜻이므로 채널을 닫는다 */
+                if(message.getData() == null) {
+                    String data = "[파일 업로드 완료 : " + fileName + "]";
+                    Platform.runLater(() -> {displayText(data);});
+                    fileChannel.close();
+                    return;
+                }
                 String data = message.getData();
                 Charset charset = Charset.defaultCharset();
                 ByteBuffer byteBuffer = charset.encode(data);
-
-                int byteCount = fileChannel.write(byteBuffer);
-                fileByteSize += byteCount;
-                message.setData("[서버: 다운로드 진행 중 ... " + byteCount +" bytes written]");
-                message.setMsgType(MsgType.DOWNLOAD_DOING);
+                fileChannel.write(byteBuffer);
             } catch (Exception e) {
-                Platform.runLater(() -> {displayText("[파일 업로드 중 오류 발생]");});
-            }
-        }
-
-        public void closeFileChannel() {
-            try {
-                String fileName = message.getData();
-                String data = "[파일 업로드 완료]\n" +
-                        "[파일 이름: " + fileName + "]\n" +
-                        "[파일 크기: " + fileByteSize + " bytes]";
-                Platform.runLater(() -> {displayText(data);});
-
-                fileChannel.close();
-                fileByteSize = 0;
-                message.setMsgType(MsgType.DOWNLOAD_END);
-            } catch (Exception e) {
-                Platform.runLater(() -> {displayText("[파일 채널 닫는 중 오류 발생]");});
+                Platform.runLater(() -> {displayText("[파일 쓰는 중 오류 발생]");});
+                e.printStackTrace();
             }
         }
 
