@@ -47,6 +47,7 @@ public class ServerController implements Initializable {
                     int keyCount = selector.select();
                     if(keyCount == 0)
                         continue;
+
                     Set<SelectionKey> selectedKeys = selector.selectedKeys();
                     Iterator<SelectionKey> iterator = selectedKeys.iterator();
                     while(iterator.hasNext()) {
