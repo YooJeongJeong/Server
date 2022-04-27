@@ -5,8 +5,10 @@ import javafx.scene.control.Button;
 import javafx.scene.control.TextArea;
 import javafx.stage.Stage;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
@@ -20,9 +22,12 @@ import javafx.application.Platform;
 
 import java.net.InetSocketAddress;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ServerController implements Initializable {
     Selector selector;
+    ExecutorService executorService;
     ServerSocketChannel serverSocketChannel;
     List<Client> connections = new Vector<Client>();    // 연결된 클라이언트
     List<User> users = new Vector<User>();              // 회원가입된 유저 리스트
@@ -31,17 +36,21 @@ public class ServerController implements Initializable {
     public void startServer() {
         try {
             selector = Selector.open();
+            executorService = Executors.newFixedThreadPool(
+                    Runtime.getRuntime().availableProcessors()
+            );
             serverSocketChannel = ServerSocketChannel.open();
             serverSocketChannel.configureBlocking(false);
             serverSocketChannel.bind(new InetSocketAddress(5001));
             serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
         } catch(Exception e) {
+            e.printStackTrace();
             if(serverSocketChannel.isOpen())
                 stopServer();
             return;
         }
 
-        Thread thread = new Thread(() -> {
+        Thread thread = new Thread (() -> {
             while(true) {
                 try {
                     int keyCount = selector.select();
@@ -91,9 +100,10 @@ public class ServerController implements Initializable {
             }
             if(serverSocketChannel != null && serverSocketChannel.isOpen())
                 serverSocketChannel.close();
+            if(executorService != null && !executorService.isShutdown())
+                executorService.shutdown();
             if(selector != null && selector.isOpen())
                 selector.close();
-
             Platform.runLater(() -> {
                 displayText("[서버 멈춤]");
                 btnConn.setText("start");
@@ -131,8 +141,6 @@ public class ServerController implements Initializable {
         Room room;
 
         FileChannel fileChannel;
-        String fileName;
-        int fileByteSize;
 
         Client(SocketChannel socketChannel) throws IOException {
             this.socketChannel = socketChannel;
@@ -159,10 +167,15 @@ public class ServerController implements Initializable {
                         doInfo(selectionKey);       break;
                     case MAKE:
                         doMakeRoom(selectionKey);   break;
-                    case UPLOAD:
-                        receiveFile();  break;
+                    /* 클라이언트가 서버로 업로드 요청을 할 때 시작 - 처리 - 완료 세 단계를 거치게 됨 */
+                    case UPLOAD_START:
+                        openFileChannelForUpload(selectionKey);  return;
+                    case UPLOAD_DO:
+                        receiveFile(selectionKey);               return;
+                    case UPLOAD_END:
+                        closeFileChannelForUpload(selectionKey); return;
                     default:
-                        Platform.runLater(()->displayText("[Error: unexpected message type]"));
+                        Platform.runLater(()->displayText("[Error: unexpected message type]")); return;
                 }
 
                 String msg = "[" + message.getMsgType() + " 요청 처리: " + socketChannel.getRemoteAddress() + ": " +
@@ -170,7 +183,6 @@ public class ServerController implements Initializable {
                 Platform.runLater(()->displayText(msg));
             } catch (Exception e) {
                 try {
-                    e.printStackTrace();
                     connections.remove(this);
                     String msg = "[클라이언트 통신 안됨: " +
                             socketChannel.getRemoteAddress() + ": " +
@@ -188,8 +200,7 @@ public class ServerController implements Initializable {
                     case LOGIN_FAILED:
                     case SIGNUP_FAILED:
                         connections.remove(this);
-                        socketChannel.close();
-                        Platform.runLater(()->{displayText(message.getData());});
+                        socketChannel.close();;
                         break;
                     default:
                         selectionKey.interestOps(SelectionKey.OP_READ);
@@ -322,33 +333,49 @@ public class ServerController implements Initializable {
             selector.wakeup();
         }
 
-        public void receiveFile() {
+        public void openFileChannelForUpload(SelectionKey selectionKey) {
             try {
-                /* 파일 채널이 닫혀 있다면, 채널을 열고 파일을 쓸 준비를 한다 */
-                if(fileChannel == null || !fileChannel.isOpen()) {
-                    fileName = message.getData();
-                    String filePath = "file" + File.separator + fileName;
+                String fileName = message.getData();
+                String filePath = "file" + File.separator + fileName;
 
-                    Path path = Paths.get(filePath);
-                    Files.createDirectories(path.getParent());
+                Path path = Paths.get(filePath);
+                Files.createDirectories(path.getParent());
 
-                    fileChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                fileChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                Platform.runLater(() -> {displayText("[업로드 요청 준비 : " + fileName + "]");});
 
-                    String data = "[파일 업로드 시작 : " + fileName + "]";
-                    Platform.runLater(() -> {displayText(data);});
-                    return;
-                }
-                /* messgae의 data 값이 null이면 클라이언트가 파일 업로드를 끝냈다는 뜻이므로 채널을 닫는다 */
-                if(message.getData() == null) {
-                    String data = "[파일 업로드 완료 : " + fileName + "]";
-                    Platform.runLater(() -> {displayText(data);});
-                    fileChannel.close();
-                    return;
-                }
-                String data = message.getData();
-                Charset charset = Charset.defaultCharset();
-                ByteBuffer byteBuffer = charset.encode(data);
+                message = new Message(MsgType.UPLOAD_START);
+                selectionKey.interestOps(SelectionKey.OP_WRITE);
+                selector.wakeup();
+
+            } catch (Exception e) {
+                Platform.runLater(() -> {displayText("[파일 채널 생성 중 오류 발생]");});
+            }
+        }
+
+        public void closeFileChannelForUpload(SelectionKey selectionKey) {
+            try {
+                fileChannel.close();
+                String fileName = message.getData();
+                Platform.runLater(() -> {displayText("[업로드 요청 처리 : " + fileName + "]");});
+
+                message = new Message(MsgType.UPLOAD_END);
+                selectionKey.interestOps(SelectionKey.OP_WRITE);
+                selector.wakeup();
+            } catch (Exception e) {
+                Platform.runLater(() -> {displayText("[파일 채널 닫는 중 오류 발생]");});
+            }
+        }
+
+        public void receiveFile(SelectionKey selectionKey) {
+            try {
+                byte[] fileData = message.getFileData();
+                ByteBuffer byteBuffer = ByteBuffer.wrap(fileData);
                 fileChannel.write(byteBuffer);
+
+                message = new Message(MsgType.UPLOAD_DO);
+                selectionKey.interestOps(SelectionKey.OP_WRITE);
+                selector.wakeup();
             } catch (Exception e) {
                 Platform.runLater(() -> {displayText("[파일 쓰는 중 오류 발생]");});
                 e.printStackTrace();

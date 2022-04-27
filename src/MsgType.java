@@ -12,5 +12,6 @@ public enum MsgType {
 
     /* 공통 메시지 */
     JOIN, EXIT, SEND,
-    UPLOAD, DOWNLOAD,
+    UPLOAD_START, UPLOAD_DO, UPLOAD_END,
+    DOWNLOAD_START, DOWNLOAD_DO, DOWNLOAD_END,
 }
