@@ -13,13 +13,24 @@ public class Message implements Serializable {
 
     private List<User> users;
     private List<Room> rooms;
+    private List<FileInfo> fileList;
 
     Message (MsgType msgType) {
         this.msgType = msgType;
     }
 
+    Message (String data, MsgType msgType) {
+        this.data = data;
+        this.msgType = msgType;
+    }
+
     Message(byte[] fileData, MsgType msgType) {
         this.fileData = fileData;
+        this.msgType = msgType;
+    }
+
+    Message(List<FileInfo> fileList, MsgType msgType) {
+        this.fileList = fileList;
         this.msgType = msgType;
     }
 

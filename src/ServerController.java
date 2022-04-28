@@ -4,22 +4,17 @@ import javafx.fxml.Initializable;
 import javafx.scene.control.Button;
 import javafx.scene.control.TextArea;
 import javafx.stage.Stage;
-
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.ObjectInputStream;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
-import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ResourceBundle;
 import javafx.application.Platform;
-
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -44,7 +39,6 @@ public class ServerController implements Initializable {
             serverSocketChannel.bind(new InetSocketAddress(5001));
             serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
         } catch(Exception e) {
-            e.printStackTrace();
             if(serverSocketChannel.isOpen())
                 stopServer();
             return;
@@ -108,12 +102,10 @@ public class ServerController implements Initializable {
                 displayText("[서버 멈춤]");
                 btnConn.setText("start");
             });
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) {}
     }
 
-    public void accept() {
+    public void accept(){
         try {
             SocketChannel socketChannel = serverSocketChannel.accept();
 
@@ -128,7 +120,6 @@ public class ServerController implements Initializable {
                 displayText("[연결 개수: " + connections.size() + "]");
             });
         } catch (Exception e) {
-            e.printStackTrace();
             if(serverSocketChannel.isOpen())
                 stopServer();
         }
@@ -169,26 +160,41 @@ public class ServerController implements Initializable {
                         doMakeRoom(selectionKey);   break;
                     /* 클라이언트가 서버로 업로드 요청을 할 때 시작 - 처리 - 완료 세 단계를 거치게 됨 */
                     case UPLOAD_START:
-                        openFileChannelForUpload(selectionKey);  return;
+                        startUPload(selectionKey);  return;
                     case UPLOAD_DO:
-                        receiveFile(selectionKey);               return;
+                        receiveFile(selectionKey);  return;
                     case UPLOAD_END:
-                        closeFileChannelForUpload(selectionKey); return;
+                        endUpload(selectionKey);    return;
+                    /* 클라이언트의 다운로드 요청 시 서버도 파일 리스트 보내고 시작 - 처리 - 완료 단계를 거침 */
+                    case DOWNLOAD_LIST:
+                        downloadList(selectionKey); return;
+                    case DOWNLOAD_START:
+                        startDownload(selectionKey);return;
+                    case DOWNLOAD_DO:
+                        sendFile(selectionKey);     return;
+                    case DOWNLOAD_END:
+                        endDownload(selectionKey);  return;
+                    /* 초대 요청에 대한 서버의 대답 */
+                    case INVITE:
+                        doInvite(selectionKey);     break;
+                    case INVITE_SUCCESS:
+                        inviteSuccess(selectionKey);break;
+                    case INVITE_FAILED:
+                        inviteFailed(selectionKey); break;
                     default:
                         Platform.runLater(()->displayText("[Error: unexpected message type]")); return;
                 }
-
                 String msg = "[" + message.getMsgType() + " 요청 처리: " + socketChannel.getRemoteAddress() + ": " +
                         Thread.currentThread().getName() + "]";
                 Platform.runLater(()->displayText(msg));
             } catch (Exception e) {
                 try {
-                    connections.remove(this);
-                    String msg = "[클라이언트 통신 안됨: " +
+                    displayText("[클라이언트 통신 안됨: " +
                             socketChannel.getRemoteAddress() + ": " +
-                            Thread.currentThread().getName() + "]";
-                    Platform.runLater(()->displayText(msg));
+                            Thread.currentThread().getName() + "]");
+                    connections.remove(this);
                     socketChannel.close();
+                    sendErrorMsg();
                 } catch(Exception e2) {}
             }
         }
@@ -208,14 +214,15 @@ public class ServerController implements Initializable {
                 }
             } catch (Exception e) {
                 try {
-                    e.printStackTrace();
-                    String message = "[클라이언트 통신 안됨: " +
+                    displayText("[클라이언트 통신 안됨: " +
                             socketChannel.getRemoteAddress() + ": " +
-                            Thread.currentThread().getName() + "]";
-                    Platform.runLater(()->displayText(message));
+                            Thread.currentThread().getName() + "]");
                     connections.remove(this);
                     socketChannel.close();
-                } catch(Exception e2) {}
+                    sendErrorMsg();
+                } catch(Exception e2) {
+                    e2.printStackTrace();
+                }
             }
         }
 
@@ -288,13 +295,18 @@ public class ServerController implements Initializable {
         public void doExit(SelectionKey selectionKey) {
             try {
                 String roomName = room.getName();
-                List<Client> clientList = findClient(roomName);
                 room = findRoom(Room.LOBBY);
-                for(Client client : clientList) {
-                    String data = "[" + user.getId() + " 님이 퇴장하셨습니다]";
-                    client.message = new Message(user.getId(), "", data, MsgType.EXIT);
-                    SelectionKey key = client.socketChannel.keyFor(selector);
-                    key.interestOps(SelectionKey.OP_WRITE);
+                List<Client> clientList = findClient(roomName);
+
+                if(clientList == null || clientList.size() == 0) {
+                    rooms.remove(findRoom(roomName));
+                } else {
+                    for(Client client : clientList) {
+                        String data = "[" + user.getId() + " 님이 퇴장하셨습니다]";
+                        client.message = new Message(user.getId(), "", data, MsgType.EXIT);
+                        SelectionKey key = client.socketChannel.keyFor(selector);
+                        key.interestOps(SelectionKey.OP_WRITE);
+                    }
                 }
                 message.setMsgType(MsgType.EXIT_SUCCESS);
             } catch (Exception e) {
@@ -333,11 +345,10 @@ public class ServerController implements Initializable {
             selector.wakeup();
         }
 
-        public void openFileChannelForUpload(SelectionKey selectionKey) {
+        public void startUPload(SelectionKey selectionKey) {
             try {
                 String fileName = message.getData();
                 String filePath = "file" + File.separator + fileName;
-
                 Path path = Paths.get(filePath);
                 Files.createDirectories(path.getParent());
 
@@ -353,7 +364,7 @@ public class ServerController implements Initializable {
             }
         }
 
-        public void closeFileChannelForUpload(SelectionKey selectionKey) {
+        public void endUpload(SelectionKey selectionKey) {
             try {
                 fileChannel.close();
                 String fileName = message.getData();
@@ -379,6 +390,137 @@ public class ServerController implements Initializable {
             } catch (Exception e) {
                 Platform.runLater(() -> {displayText("[파일 쓰는 중 오류 발생]");});
                 e.printStackTrace();
+            }
+        }
+
+        public void downloadList(SelectionKey selectionKey) {
+            List<FileInfo> fileList = new Vector<FileInfo>();
+            File[] files = new File("file").listFiles();
+            for(File file : Objects.requireNonNull(files)) {
+                FileInfo fileInfo = new FileInfo(file.getName(), file.length());
+                fileList.add(fileInfo);
+            }
+            message = new Message(fileList, MsgType.DOWNLOAD_LIST);
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
+        }
+
+        public void startDownload(SelectionKey selectionKey) {
+            /* 파일 채널 열고 클라이언트에게 응답 */
+            try {
+                String fileName = message.getData();
+                String filePath = "file" + File.separator + fileName;
+
+                Path path = Paths.get(filePath);
+                fileChannel = FileChannel.open(path, StandardOpenOption.READ);
+
+                Platform.runLater(() -> {displayText("[파일 전송 준비 완료 : " + fileName + "]");});
+
+                message = new Message(fileName, MsgType.DOWNLOAD_START);
+                selectionKey.interestOps(SelectionKey.OP_WRITE);
+                selector.wakeup();
+            } catch (Exception e) {}
+        }
+
+        public void sendFile(SelectionKey selectionKey) {
+            try {
+                String fileName = message.getData();
+                ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
+                int byteCount = fileChannel.read(byteBuffer);
+                if(byteCount == -1) {
+                    System.out.println();
+                    message = new Message(fileName, MsgType.DOWNLOAD_END);
+                } else {
+                    byteBuffer.flip();
+                    byte[] fileData = new byte[byteBuffer.remaining()];
+                    byteBuffer.get(fileData);
+                    message = new Message(fileName, MsgType.DOWNLOAD_DO);
+                    message.setFileData(fileData);
+                }
+            } catch (Exception e) {
+                Platform.runLater(() -> {displayText("[파일 전송 중 오류 발생]");});
+            }
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
+        }
+
+        public void endDownload(SelectionKey selectionKey) {
+            /* 클라이언트가 무사히 다운로드 했으면 서버도 파일 채널 닫음 */
+            try {
+                fileChannel.close();
+                String fileName = message.getData();
+                Platform.runLater(() -> {displayText("[파일 전송 완료: " + fileName + "]");});
+            } catch (Exception e) {}
+        }
+
+        public void doInvite(SelectionKey selectionKey) {
+            String targetId = message.getId();    // 초대받은 유저의 ID
+            String roomName = message.getData();  // 초대받은 방 이름
+            for(Client client : connections) {
+                if( client.user.getId().equals(targetId) && client.room.getName().equals(Room.LOBBY)) {
+                    /* 초대 받는 사람에게 초대한 사람의 id와 방이름을 함께 보냄 */
+                    client.message = new Message(user.getId(), "", roomName, MsgType.INVITE);
+                    SelectionKey key = client.socketChannel.keyFor(selector);
+                    key.interestOps(SelectionKey.OP_WRITE);
+                    selector.wakeup();
+                    return;
+                }
+            }
+            message = new Message(MsgType.INVITE_FAILED);
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
+        }
+
+        public void inviteSuccess(SelectionKey selectionKey) {
+            String roomName = message.getData();
+            String userId = message.getId();      // 초대한 사람의 id
+            String targetId = user.getId();       // 초대받은 사람의 id
+
+            List<Client> clientList = findClient(roomName);
+            for(Client client : clientList) {
+                String data = "[" + userId + " 님이 " + targetId + " 님을 초대하셨습니다]";
+                client.message = new Message(data, MsgType.INVITE);
+                SelectionKey key = client.socketChannel.keyFor(selector);
+                key.interestOps(SelectionKey.OP_WRITE);
+            }
+            room = findRoom(roomName);
+            message.setData(roomName);
+            message.setMsgType(MsgType.INVITE_SUCCESS);
+
+            selectionKey.interestOps(SelectionKey.OP_WRITE);
+            selector.wakeup();
+        }
+
+        public void inviteFailed(SelectionKey selectionKey) {
+            String userId = message.getId();      // 초대한 사람의 id
+            String roomName = message.getData();
+            for(Client client : connections) {
+                if(client.user.getId().equals(userId) && client.room.getName().equals(roomName)) {
+                    client.message = new Message(user.getId(), "", roomName, MsgType.INVITE_FAILED);
+                    SelectionKey key = client.socketChannel.keyFor(selector);
+                    key.interestOps(SelectionKey.OP_WRITE);
+                    selector.wakeup();
+                    return;
+                }
+            }
+        }
+
+        /* 클라이언트가 강제종료 되었을 때 다른 클라이언트에게 알림 */
+        public void sendErrorMsg() {
+            String roomName = room.getName();
+            List<Client> clientList = findClient(roomName);
+
+            if(clientList == null || clientList.size() == 0) {
+                rooms.remove(findRoom(roomName));
+            } else {
+                for(Client client : clientList) {
+                    String id = user.getId();
+                    String data = "[" + id + "님의 접속이 끊어졌습니다]";
+                    client.message = new Message(user.getId(), "", data, MsgType.DISCONNECT);
+                    SelectionKey selectionKey = client.socketChannel.keyFor(selector);
+                    selectionKey.interestOps(SelectionKey.OP_WRITE);
+                }
+                selector.wakeup();
             }
         }
 
