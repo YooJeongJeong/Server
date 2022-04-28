@@ -230,10 +230,10 @@ public class ServerController implements Initializable {
             user = findUser(message.getId());
             if(user != null) {
                 if(user.getPw().equals(message.getPw())) {
+                    refresh(Room.LOBBY);
                     message.setData("[" + message.getId() + " [로그인 성공]");
                     message.setMsgType(MsgType.LOGIN_SUCCESS);
                     room = findRoom(Room.LOBBY);
-
                 } else {
                     message.setData("[비밀번호가 틀렸습니다]");
                     message.setMsgType(MsgType.LOGIN_FAILED);
@@ -274,6 +274,7 @@ public class ServerController implements Initializable {
 
         public void doJoin(SelectionKey selectionKey) {
             try {
+                refresh(Room.LOBBY);
                 String roomName = message.getData();
                 List<Client> clientList = findClient(roomName);
                 for(Client client : clientList) {
@@ -294,11 +295,13 @@ public class ServerController implements Initializable {
 
         public void doExit(SelectionKey selectionKey) {
             try {
+                refresh(Room.LOBBY);
                 String roomName = room.getName();
                 room = findRoom(Room.LOBBY);
                 List<Client> clientList = findClient(roomName);
 
-                if(clientList == null || clientList.size() == 0) {
+                if(!roomName.equals(Room.LOBBY) &&
+                        (clientList == null || clientList.size() == 0)) {
                     rooms.remove(findRoom(roomName));
                 } else {
                     for(Client client : clientList) {
@@ -333,6 +336,7 @@ public class ServerController implements Initializable {
         public void doMakeRoom(SelectionKey selectionKey) {
             String roomName = message.getData();
             if(findRoom(roomName) == null) {
+                refresh(Room.LOBBY);
                 Room newRoom = new Room(roomName, message.getId());
                 rooms.add(newRoom);
                 room = findRoom(roomName);
@@ -428,7 +432,6 @@ public class ServerController implements Initializable {
                 ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
                 int byteCount = fileChannel.read(byteBuffer);
                 if(byteCount == -1) {
-                    System.out.println();
                     message = new Message(fileName, MsgType.DOWNLOAD_END);
                 } else {
                     byteBuffer.flip();
@@ -471,6 +474,7 @@ public class ServerController implements Initializable {
             selector.wakeup();
         }
 
+        /* 상대가 초대를 수락하면 방에 있는 모든 이에게 메시지 보냄 */
         public void inviteSuccess(SelectionKey selectionKey) {
             String roomName = message.getData();
             String userId = message.getId();      // 초대한 사람의 id
@@ -491,6 +495,7 @@ public class ServerController implements Initializable {
             selector.wakeup();
         }
 
+        /* 상대가 초대 거부시, 초대한 사람에게 따로 메시지를 보냄 */
         public void inviteFailed(SelectionKey selectionKey) {
             String userId = message.getId();      // 초대한 사람의 id
             String roomName = message.getData();
@@ -510,7 +515,8 @@ public class ServerController implements Initializable {
             String roomName = room.getName();
             List<Client> clientList = findClient(roomName);
 
-            if(clientList == null || clientList.size() == 0) {
+            if(!roomName.equals(Room.LOBBY) &&
+                    (clientList == null || clientList.size() == 0)) {
                 rooms.remove(findRoom(roomName));
             } else {
                 for(Client client : clientList) {
@@ -548,8 +554,20 @@ public class ServerController implements Initializable {
             }
             return clients;
         }
-    }
 
+        /* roomName 방에 있는 다른 유저들이 방 목록, 유저 목록 새로고침하게 만듬 (현재(this) 클라이언트는 제외) */
+        public void refresh(String roomName) {
+            List<Client> clientList = findClient(Room.LOBBY);
+            if(clientList != null)
+                for(Client client : clientList) {
+                    if(client == this)
+                        continue;
+                    client.message = new Message(MsgType.REFRESH);
+                    SelectionKey key = client.socketChannel.keyFor(selector);
+                    key.interestOps(SelectionKey.OP_WRITE);
+                }
+        }
+    }
 
     /************************************************ JavaFx UI ************************************************/
     Stage primaryStage;
