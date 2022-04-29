@@ -10,7 +10,7 @@ public enum MsgType {
 
     /* 클라이언트가 서버로 보내는 메시지 */
     LOGIN, SIGNUP,
-    INFO, MAKE,
+    ROOM_INFO, MAKE_ROOM,
     INVITE,
 
     /* 공통 메시지 */

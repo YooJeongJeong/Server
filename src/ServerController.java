@@ -154,9 +154,9 @@ public class ServerController implements Initializable {
                         doJoin(selectionKey);       break;
                     case EXIT:
                         doExit(selectionKey);       break;
-                    case INFO:
+                    case ROOM_INFO:
                         doInfo(selectionKey);       break;
-                    case MAKE:
+                    case MAKE_ROOM:
                         doMakeRoom(selectionKey);   break;
                     /* 클라이언트가 서버로 업로드 요청을 할 때 시작 - 처리 - 완료 세 단계를 거치게 됨 */
                     case UPLOAD_START:
