@@ -173,8 +173,6 @@ public class ServerController implements Initializable {
                         startDownload();break;
                     case DOWNLOAD_DO:
                         sendFile();     break;
-                    case DOWNLOAD_END:
-                        endDownload();  break;
                     /* 초대 요청에 대한 서버의 대답 */
                     case INVITE:
                         doInvite();     break;
@@ -183,6 +181,7 @@ public class ServerController implements Initializable {
                     case INVITE_FAILED:
                         inviteFailed(); break;
                     default:
+                        return;
                 }
                 selectionKey.interestOps(SelectionKey.OP_WRITE);
                 selector.wakeup();
@@ -400,7 +399,7 @@ public class ServerController implements Initializable {
             /* 파일 채널 열고 클라이언트에게 응답 */
             try {
                 String fileName = message.getData();
-                String dir = room.getName() + File.separator + "file";
+                String dir = "file" + File.separator + room.getName();
                 String filePath = dir + File.separator + fileName;
 
                 Path path = Paths.get(filePath);
@@ -419,6 +418,8 @@ public class ServerController implements Initializable {
                 int byteCount = fileChannel.read(byteBuffer);
                 if(byteCount == -1) {
                     message = new Message(fileName, MsgType.DOWNLOAD_END);
+                    fileChannel.close();
+                    Platform.runLater(() -> {displayText("[파일 전송 완료: " + fileName + "]");});
                 } else {
                     byteBuffer.flip();
                     byte[] fileData = new byte[byteBuffer.remaining()];
@@ -427,17 +428,9 @@ public class ServerController implements Initializable {
                     message.setFileData(fileData);
                 }
             } catch (Exception e) {
+                e.printStackTrace();
                 Platform.runLater(() -> {displayText("[파일 전송 중 오류 발생]");});
             }
-        }
-
-        public void endDownload() {
-            /* 클라이언트가 무사히 다운로드 했으면 서버도 파일 채널 닫음 */
-            try {
-                fileChannel.close();
-                String fileName = message.getData();
-                Platform.runLater(() -> {displayText("[파일 전송 완료: " + fileName + "]");});
-            } catch (Exception e) {}
         }
 
         public void doInvite() {
