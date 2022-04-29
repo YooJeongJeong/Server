@@ -547,7 +547,7 @@ public class ServerController implements Initializable {
                         Platform.runLater(() -> displayText("[파일 삭제: " + file.getName() +"]"));
                     }
                     folder.delete();
-                    Platform.runLater(() -> displayText("폴더 삭제: " + folder.getClass() + "]"));
+                    Platform.runLater(() -> displayText("[폴더 삭제: " + folder.getClass() + "]"));
                 }
             } catch(Exception e) {}
         }
