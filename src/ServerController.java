@@ -17,12 +17,12 @@ import java.util.ResourceBundle;
 import javafx.application.Platform;
 import java.net.InetSocketAddress;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class ServerController implements Initializable {
-    Selector selector;
     ExecutorService executorService;
+
+    Selector selector;
     ServerSocketChannel serverSocketChannel;
     List<Client> connections = new Vector<Client>();    // 연결된 클라이언트
     List<User> users = new Vector<User>();              // 회원가입된 유저 리스트
@@ -30,10 +30,11 @@ public class ServerController implements Initializable {
 
     public void startServer() {
         try {
-            selector = Selector.open();
             executorService = Executors.newFixedThreadPool(
                     Runtime.getRuntime().availableProcessors()
             );
+
+            selector = Selector.open();
             serverSocketChannel = ServerSocketChannel.open();
             serverSocketChannel.configureBlocking(false);
             serverSocketChannel.bind(new InetSocketAddress(5001));
@@ -357,7 +358,7 @@ public class ServerController implements Initializable {
                 Files.createDirectories(path.getParent());
 
                 fileChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                Platform.runLater(() -> {displayText("[업로드 요청 준비 : " + fileName + "]");});
+                Platform.runLater(() -> {displayText("[업로드 시작: " + fileName + "]");});
 
                 message = new Message(MsgType.UPLOAD_START);
                 selectionKey.interestOps(SelectionKey.OP_WRITE);
@@ -372,7 +373,7 @@ public class ServerController implements Initializable {
             try {
                 fileChannel.close();
                 String fileName = message.getData();
-                Platform.runLater(() -> {displayText("[업로드 요청 처리 : " + fileName + "]");});
+                Platform.runLater(() -> {displayText("[업로드 완료: " + fileName + "]");});
 
                 message = new Message(MsgType.UPLOAD_END);
                 selectionKey.interestOps(SelectionKey.OP_WRITE);
