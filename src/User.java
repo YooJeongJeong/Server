@@ -20,19 +20,4 @@ public class User implements Serializable {
     public String getPw() {
         return pw;
     }
-
-    @Override
-    public boolean equals(Object obj) {
-        if(obj instanceof  User) {
-            User user = (User) obj;
-            return id.equals(user.id) && pw.equals(user.pw);
-        } else {
-            return false;
-        }
-    }
-
-    @Override
-    public int hashCode() {
-        return id.hashCode() + pw.hashCode();
-    }
 }
