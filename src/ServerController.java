@@ -20,8 +20,6 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class ServerController implements Initializable {
-    ExecutorService executorService;
-
     Selector selector;
     ServerSocketChannel serverSocketChannel;
     List<Client> connections = new Vector<Client>();    // 연결된 클라이언트
@@ -30,10 +28,6 @@ public class ServerController implements Initializable {
 
     public void startServer() {
         try {
-            executorService = Executors.newFixedThreadPool(
-                    Runtime.getRuntime().availableProcessors()
-            );
-
             selector = Selector.open();
             serverSocketChannel = ServerSocketChannel.open();
             serverSocketChannel.configureBlocking(false);
@@ -95,8 +89,6 @@ public class ServerController implements Initializable {
             }
             if(serverSocketChannel != null && serverSocketChannel.isOpen())
                 serverSocketChannel.close();
-            if(executorService != null && !executorService.isShutdown())
-                executorService.shutdown();
             if(selector != null && selector.isOpen())
                 selector.close();
             Platform.runLater(() -> {
