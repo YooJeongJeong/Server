@@ -470,7 +470,7 @@ public class ServerController implements Initializable {
                     return;
                 }
             }
-            message = new Message(MsgType.INVITE_FAILED);
+            message = new Message("[유저를 찾을 수 없습니다]", MsgType.INVITE_FAILED);
             selectionKey.interestOps(SelectionKey.OP_WRITE);
             selector.wakeup();
         }
