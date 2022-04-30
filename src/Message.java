@@ -24,11 +24,6 @@ public class Message implements Serializable {
         this.msgType = msgType;
     }
 
-    Message(byte[] fileData, MsgType msgType) {
-        this.fileData = fileData;
-        this.msgType = msgType;
-    }
-
     Message(List<FileInfo> fileList, MsgType msgType) {
         this.fileList = fileList;
         this.msgType = msgType;
@@ -99,14 +94,6 @@ public class Message implements Serializable {
 
     public byte[] getFileData() {
         return fileData;
-    }
-
-    public List<Room> getRooms() {
-        return rooms;
-    }
-
-    public List<User> getUsers() {
-        return users;
     }
 
     public void setData(String data) {
