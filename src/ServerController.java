@@ -477,10 +477,9 @@ public class ServerController implements Initializable {
                 rooms.remove(findRoom(roomName));
                 removeDir(roomName);
             } else {
-                String data = "[" + id + "님의 접속이 끊어졌습니다]";
+                String data = "[" + user.getId() + " 님의 접속이 끊어졌습니다]";
                 for(Client client : clientList) {
-                    String id = user.getId();
-                    client.message = new Message(user.getId(), "", data, MsgType.DISCONNECT);
+                    client.message = new Message(data, MsgType.DISCONNECT);
                     SelectionKey selectionKey = client.socketChannel.keyFor(selector);
                     selectionKey.interestOps(SelectionKey.OP_WRITE);
                 }
