@@ -441,8 +441,8 @@ public class ServerController implements Initializable {
             String targetId = user.getId();       // 초대받은 사람의 id
 
             List<Client> clientList = findClient(roomName);
+            String data = "[" + userId + " 님이 " + targetId + " 님을 초대하셨습니다]";
             for(Client client : clientList) {
-                String data = "[" + userId + " 님이 " + targetId + " 님을 초대하셨습니다]";
                 client.message = new Message(data, MsgType.INVITE);
                 SelectionKey key = client.socketChannel.keyFor(selector);
                 key.interestOps(SelectionKey.OP_WRITE);
