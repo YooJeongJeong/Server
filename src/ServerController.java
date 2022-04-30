@@ -334,8 +334,13 @@ public class ServerController implements Initializable {
         public void startUPload() {
             try {
                 String fileName = message.getData();
-                String dir = "file" + File.separator + room.getName();
-                String filePath = dir + File.separator + fileName;
+                String separator = File.separator;
+                if(separator.equals("\\")) {
+                    System.out.println("true");
+                    separator += separator;
+                }
+                String dir = "file" + separator + room.getName();
+                String filePath = dir + separator + fileName;
                 Path path = Paths.get(filePath);
                 Files.createDirectories(path.getParent());
 
@@ -375,7 +380,12 @@ public class ServerController implements Initializable {
 
         public void downloadList() throws IOException {
             List<FileInfo> fileList = new Vector<FileInfo>();
-            String dir = "file" + File.separator + room.getName();
+            String separator = File.separator;
+            if(separator.equals("\\")) {
+                System.out.println("true");
+                separator += separator;
+            }
+            String dir = "file" + separator + room.getName();
             Path path = Paths.get(dir);
             Files.createDirectories(path);
             File[] files = new File(dir).listFiles();
@@ -391,8 +401,13 @@ public class ServerController implements Initializable {
             /* 파일 채널 열고 클라이언트에게 응답 */
             try {
                 String fileName = message.getData();
-                String dir = "file" + File.separator + room.getName();
-                String filePath = dir + File.separator + fileName;
+                String separator = File.separator;
+                if(separator.equals("\\")) {
+                    System.out.println("true");
+                    separator += separator;
+                }
+                String dir = "file" + separator + room.getName();
+                String filePath = dir + separator + fileName;
 
                 Path path = Paths.get(filePath);
                 fileChannel = FileChannel.open(path, StandardOpenOption.READ);
