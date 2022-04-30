@@ -22,9 +22,12 @@ import java.util.concurrent.*;
 public class ServerController implements Initializable {
     Selector selector;
     ServerSocketChannel serverSocketChannel;
+
     List<Client> connections = new Vector<Client>();    // 연결된 클라이언트
     List<User> users = new Vector<User>();              // 회원가입된 유저 리스트
     List<Room> rooms = new Vector<Room>();              // 생성된 방 리스트
+
+    String separator, dirPath;
 
     public void startServer() {
         try {
@@ -45,7 +48,6 @@ public class ServerController implements Initializable {
                     int keyCount = selector.select();
                     if(keyCount == 0)
                         continue;
-
                     Set<SelectionKey> selectedKeys = selector.selectedKeys();
                     Iterator<SelectionKey> iterator = selectedKeys.iterator();
                     while(iterator.hasNext()) {
@@ -64,9 +66,8 @@ public class ServerController implements Initializable {
                         iterator.remove();
                     }
                 } catch (Exception e) {
-                    if(serverSocketChannel.isOpen()) {
+                    if(serverSocketChannel.isOpen())
                         stopServer();
-                    }
                     break;
                 }
             }
@@ -87,10 +88,12 @@ public class ServerController implements Initializable {
                 client.socketChannel.close();
                 iterator.remove();
             }
+
             if(serverSocketChannel != null && serverSocketChannel.isOpen())
                 serverSocketChannel.close();
             if(selector != null && selector.isOpen())
                 selector.close();
+
             Platform.runLater(() -> {
                 displayText("[서버 멈춤]");
                 btnConn.setText("start");
@@ -120,11 +123,11 @@ public class ServerController implements Initializable {
 
     class Client {
         SocketChannel socketChannel;
+        FileChannel fileChannel;
+
         Message message;
         User user;
         Room room;
-
-        FileChannel fileChannel;
 
         Client(SocketChannel socketChannel) throws IOException {
             this.socketChannel = socketChannel;
@@ -151,21 +154,20 @@ public class ServerController implements Initializable {
                         doInfo();       break;
                     case MAKE_ROOM:
                         doMakeRoom();   break;
-                    /* 클라이언트가 서버로 업로드 요청을 할 때 시작 - 처리 - 완료 세 단계를 거치게 됨 */
-                    case UPLOAD_START:
-                        startUPload();  break;
+                    case UPLOAD_START:          // 유저가 파일 업로드 요청을 한 것, 서버는 데이터를 받는 쪽임
+                        openFileChannel(message.getData(), MsgType.UPLOAD_START);
+                        break;
                     case UPLOAD_DO:
                         receiveFile();  break;
                     case UPLOAD_END:
-                        endUpload();    break;
-                    /* 클라이언트의 다운로드 요청 시 서버도 파일 리스트 보내고 시작 - 처리 - 완료 단계를 거침 */
+                        closeFileChannel();    break;
                     case DOWNLOAD_LIST:
                         downloadList(); break;
-                    case DOWNLOAD_START:
-                        startDownload();break;
+                    case DOWNLOAD_START:        // 유저가 파일 다운로드 요청을 한 것, 서버는 데이터를 보내는 쪽임
+                        openFileChannel(message.getData(), MsgType.DOWNLOAD_START);
+                        break;
                     case DOWNLOAD_DO:
                         sendFile();     break;
-                    /* 초대 요청에 대한 서버의 대답 */
                     case INVITE:
                         doInvite();     break;
                     case INVITE_SUCCESS:
@@ -331,29 +333,30 @@ public class ServerController implements Initializable {
             Platform.runLater(()->displayText("[" + message.getMsgType() + " 요청 처리]"));
         }
 
-        public void startUPload() {
+        public void openFileChannel(String fileName, MsgType msgType) {
+            String filePath = dirPath + room.getName() + separator + fileName;
             try {
-                String fileName = message.getData();
-                String separator = File.separator;
-                if(separator.equals("\\")) {
-                    System.out.println("true");
-                    separator += separator;
+                if(msgType == MsgType.UPLOAD_START) {
+                    Path path = Paths.get(filePath);
+                    Files.createDirectories(path.getParent());
+
+                    fileChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                    message = new Message(fileName, MsgType.UPLOAD_START);
+
+                    Platform.runLater(() -> {displayText("[업로드 시작: " + fileName + "]");});
+                } else if (msgType == MsgType.DOWNLOAD_START) {
+                    Path path = Paths.get(filePath);
+                    fileChannel = FileChannel.open(path, StandardOpenOption.READ);
+                    message = new Message(fileName, MsgType.DOWNLOAD_START);
+
+                    Platform.runLater(() -> {displayText("[파일 전송 시작: " + fileName + "]");});
                 }
-                String dir = "file" + separator + room.getName();
-                String filePath = dir + separator + fileName;
-                Path path = Paths.get(filePath);
-                Files.createDirectories(path.getParent());
-
-                fileChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                Platform.runLater(() -> {displayText("[업로드 시작: " + fileName + "]");});
-
-                message = new Message(MsgType.UPLOAD_START);
             } catch (Exception e) {
-                Platform.runLater(() -> {displayText("[파일 채널 생성 중 오류 발생]");});
+                e.printStackTrace();
             }
         }
 
-        public void endUpload() {
+        public void closeFileChannel() {
             try {
                 fileChannel.close();
                 String fileName = message.getData();
@@ -367,11 +370,12 @@ public class ServerController implements Initializable {
 
         public void receiveFile() {
             try {
+                String fileName = message.getData();
                 byte[] fileData = message.getFileData();
                 ByteBuffer byteBuffer = ByteBuffer.wrap(fileData);
                 fileChannel.write(byteBuffer);
 
-                message = new Message(MsgType.UPLOAD_DO);
+                message = new Message(fileName, MsgType.UPLOAD_DO);
             } catch (Exception e) {
                 Platform.runLater(() -> {displayText("[파일 쓰는 중 오류 발생]");});
                 e.printStackTrace();
@@ -380,42 +384,16 @@ public class ServerController implements Initializable {
 
         public void downloadList() throws IOException {
             List<FileInfo> fileList = new Vector<FileInfo>();
-            String separator = File.separator;
-            if(separator.equals("\\")) {
-                System.out.println("true");
-                separator += separator;
-            }
-            String dir = "file" + separator + room.getName();
-            Path path = Paths.get(dir);
+            String dirPath = ServerController.this.dirPath + room.getName();
+            Path path = Paths.get(dirPath);
             Files.createDirectories(path);
-            File[] files = new File(dir).listFiles();
+            File[] files = new File(dirPath).listFiles();
 
             for(File file : Objects.requireNonNull(files)) {
                 FileInfo fileInfo = new FileInfo(file.getName(), file.length());
                 fileList.add(fileInfo);
             }
             message = new Message(fileList, MsgType.DOWNLOAD_LIST);
-        }
-
-        public void startDownload() {
-            /* 파일 채널 열고 클라이언트에게 응답 */
-            try {
-                String fileName = message.getData();
-                String separator = File.separator;
-                if(separator.equals("\\")) {
-                    System.out.println("true");
-                    separator += separator;
-                }
-                String dir = "file" + separator + room.getName();
-                String filePath = dir + separator + fileName;
-
-                Path path = Paths.get(filePath);
-                fileChannel = FileChannel.open(path, StandardOpenOption.READ);
-
-                Platform.runLater(() -> {displayText("[파일 전송 준비 완료 : " + fileName + "]");});
-
-                message = new Message(fileName, MsgType.DOWNLOAD_START);
-            } catch (Exception e) {}
         }
 
         public void sendFile() {
@@ -510,35 +488,10 @@ public class ServerController implements Initializable {
             }
         }
 
-        public User findUser(String id) {
-            for(User user : users)
-                if(user.getId().equals(id))
-                    return user;
-            return null;
-        }
-
-        public Room findRoom(String name) {
-            for(Room room : rooms)
-                if(room.getName().equals(name))
-                    return room;
-            return null;
-        }
-
-        /* roomName 이름의 방에 있는 클라이언트 리스트를 리턴 */
-        public List<Client> findClient(String roomName) {
-            List<Client> clients = new Vector<Client>();
-            for(Client client : connections) {
-                Room room = client.room;
-                if(room != null && room.getName().equals(roomName))
-                    clients.add(client);
-            }
-            return clients;
-        }
-
         /* 방 삭제될 때 파일이 저장된 폴더 제거 */
         public void removeDir(String roomName) {
-            String path = "file" + File.separator + roomName;
-            File folder = new File(path);
+            String dirPath = ServerController.this.dirPath + roomName;
+            File folder = new File(dirPath);
             try {
                 while(folder.exists() && folder.isDirectory()) {
                     File[] files = folder.listFiles();
@@ -566,6 +519,31 @@ public class ServerController implements Initializable {
         }
     }
 
+        public User findUser(String id) {
+            for(User user : users)
+                if(user.getId().equals(id))
+                    return user;
+            return null;
+        }
+
+        public Room findRoom(String name) {
+            for(Room room : rooms)
+                if(room.getName().equals(name))
+                    return room;
+            return null;
+        }
+
+        /* roomName 이름의 방에 있는 클라이언트 리스트를 리턴 */
+        public List<Client> findClient(String roomName) {
+            List<Client> clients = new Vector<Client>();
+            for(Client client : connections) {
+                Room room = client.room;
+                if(room != null && room.getName().equals(roomName))
+                    clients.add(client);
+            }
+            return clients;
+        }
+
     /************************************************ JavaFx UI ************************************************/
     Stage primaryStage;
     @FXML TextArea txtDisplay;
@@ -573,6 +551,11 @@ public class ServerController implements Initializable {
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
+        separator = File.separator;
+        if(separator.equals("\\"))
+            separator += separator;
+        dirPath = "file" + separator;
+
         users.add(new User(User.MASTER, "master"));
         rooms.add(new Room(Room.LOBBY, User.MASTER));
         users.add(new User("yoo", "1111"));
