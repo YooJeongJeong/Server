@@ -438,17 +438,15 @@ public class ServerController implements Initializable {
             String roomName = message.getData();
             String userId = message.getId();      // 초대한 사람의 id
             String targetId = user.getId();       // 초대받은 사람의 id
+            room = findRoom(roomName);
 
             List<Client> clientList = findClient(roomName);
             String data = "[" + userId + " 님이 " + targetId + " 님을 초대하셨습니다]";
             for(Client client : clientList) {
-                client.message = new Message(data, MsgType.INVITE);
+                client.message = new Message(data, MsgType.INVITE_SUCCESS);
                 SelectionKey key = client.socketChannel.keyFor(selector);
                 key.interestOps(SelectionKey.OP_WRITE);
             }
-            room = findRoom(roomName);
-            message.setData(roomName);
-            message.setMsgType(MsgType.INVITE_SUCCESS);
         }
 
         /* 상대가 초대 거부시, 초대한 사람에게 따로 메시지를 보냄 */
@@ -457,7 +455,8 @@ public class ServerController implements Initializable {
             String roomName = message.getData();
             for(Client client : connections) {
                 if(client.user.getId().equals(userId) && client.room.getName().equals(roomName)) {
-                    client.message = new Message(user.getId(), "", roomName, MsgType.INVITE_FAILED);
+                    String data = "[" + user.getId() + " 님이 초대를 거부하셨습니다]";
+                    client.message = new Message(data, MsgType.INVITE_FAILED);
                     SelectionKey key = client.socketChannel.keyFor(selector);
                     key.interestOps(SelectionKey.OP_WRITE);
                     selector.wakeup();
