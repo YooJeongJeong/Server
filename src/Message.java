@@ -24,6 +24,12 @@ public class Message implements Serializable {
         this.msgType = msgType;
     }
 
+    Message(String fileName, byte[] fileData, MsgType msgType) {
+        this.data = fileName;
+        this.fileData = fileData;
+        this.msgType = msgType;
+    }
+
     Message(List<FileInfo> fileList, MsgType msgType) {
         this.fileList = fileList;
         this.msgType = msgType;
@@ -102,10 +108,6 @@ public class Message implements Serializable {
 
     public void setMsgType(MsgType msgType) {
         this.msgType = msgType;
-    }
-
-    public void setFileData(byte[] data) {
-        this.fileData = data;
     }
 
     public void setUsers(List<User> users) {

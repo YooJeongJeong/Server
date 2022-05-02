@@ -18,6 +18,11 @@ public class FileInfo implements Serializable{
         float gb = 1024 * mb;
 
         DecimalFormat df = new DecimalFormat("0.00");
-        return df.format(size/gb) + " GB";
+
+        return size/gb > 1.0 ? df.format(size/gb) + " GB" :
+                size/mb > 1.0 ? df.format(size/mb) + " MB" :
+                                df.format(size/kb) + " KB";
     }
+
+    public String getSize() { return size;}
 }

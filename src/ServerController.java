@@ -374,7 +374,6 @@ public class ServerController implements Initializable {
                 byte[] fileData = message.getFileData();
                 ByteBuffer byteBuffer = ByteBuffer.wrap(fileData);
                 fileChannel.write(byteBuffer);
-
                 message = new Message(fileName, MsgType.UPLOAD_DO);
             } catch (Exception e) {
                 Platform.runLater(() -> {displayText("[파일 쓰는 중 오류 발생]");});
@@ -392,6 +391,7 @@ public class ServerController implements Initializable {
             for(File file : Objects.requireNonNull(files)) {
                 FileInfo fileInfo = new FileInfo(file.getName(), file.length());
                 fileList.add(fileInfo);
+                System.out.println(fileInfo.getSize());
             }
             message = new Message(fileList, MsgType.DOWNLOAD_LIST);
         }
@@ -409,8 +409,7 @@ public class ServerController implements Initializable {
                     byteBuffer.flip();
                     byte[] fileData = new byte[byteBuffer.remaining()];
                     byteBuffer.get(fileData);
-                    message = new Message(fileName, MsgType.DOWNLOAD_DO);
-                    message.setFileData(fileData);
+                    message = new Message(fileName, fileData, MsgType.DOWNLOAD_DO);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -553,7 +552,7 @@ public class ServerController implements Initializable {
         separator = File.separator;
         if(separator.equals("\\"))
             separator += separator;
-        dirPath = "file" + separator;
+        dirPath = getClass().getResource("").getPath() + "file" + separator;
 
         users.add(new User(User.MASTER, "master"));
         rooms.add(new Room(Room.LOBBY, User.MASTER));
