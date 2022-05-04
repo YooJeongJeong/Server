@@ -551,7 +551,7 @@ public class ServerController implements Initializable {
         separator = File.separator;
         if(separator.equals("\\"))
             separator += separator;
-        dirPath = getClass().getResource("").getPath() + "file" + separator;
+        dirPath = "file" + separator;
 
         users.add(new User(User.MASTER, "master"));
         rooms.add(new Room(Room.LOBBY, User.MASTER));
