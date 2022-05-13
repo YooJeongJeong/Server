@@ -66,8 +66,9 @@ public class ServerController implements Initializable {
                         iterator.remove();
                     }
                 } catch (Exception e) {
-                    if(serverSocketChannel.isOpen())
+                    if(serverSocketChannel.isOpen()) {
                         stopServer();
+                    }
                     break;
                 }
             }
@@ -399,7 +400,7 @@ public class ServerController implements Initializable {
         public void sendFile() {
             try {
                 String fileName = message.getData();
-                ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
+                ByteBuffer byteBuffer = ByteBuffer.allocate(500);
                 int byteCount = fileChannel.read(byteBuffer);
                 if(byteCount == -1) {
                     message = new Message(fileName, MsgType.DOWNLOAD_END);
