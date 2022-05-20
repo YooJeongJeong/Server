@@ -505,7 +505,7 @@ public class ServerController implements Initializable {
 
         /* roomName 방에 있는 다른 유저들이 방 목록, 유저 목록 새로고침하게 만듬 (현재(this) 클라이언트는 제외) */
         public void refresh(String roomName) {
-            List<Client> clientList = findClient(Room.LOBBY);
+            List<Client> clientList = findClient(roomName);
             if(clientList != null)
                 for(Client client : clientList) {
                     if(client == this)
